@@ -1,6 +1,9 @@
+use starknet::ContractAddress;
+
 #[starknet::interface]
 pub trait IPool<T> {
     fn get_liquidity(self: @T) -> u256;
+    fn deposit(ref self: T, from: ContractAddress, amount: u256);
     fn lock_reserve(ref self: T, amount: u256);
     fn unlock_reserve(ref self: T, amount: u256);
 }
@@ -62,6 +65,12 @@ pub mod pool {
         fn get_liquidity(self: @ContractState) -> u256 {
             let token = IERC20Dispatcher { contract_address: self.token.read() };
             token.balance_of(get_contract_address()) - self.locked_funds.read()
+        }
+
+        fn deposit(ref self: ContractState, from: ContractAddress, amount: u256) {
+            self.accesscontrol.assert_only_role(OPERATOR_ROLE);
+            let token = IERC20Dispatcher { contract_address: self.token.read() };
+            token.transfer_from(from, get_contract_address(), amount);
         }
 
         fn lock_reserve(ref self: ContractState, amount: u256) {

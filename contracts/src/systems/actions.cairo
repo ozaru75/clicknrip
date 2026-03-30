@@ -116,7 +116,8 @@ pub mod actions {
             let pool = IPoolDispatcher { contract_address: config.pool_address };
             pool.lock_reserve(extra_to_lock);
 
-            // TODO: pool deposit
+            // Pull stake from player into the pool
+            pool.deposit(player, stake);
 
             // Generate unique game ID
             let id = world.dispatcher.uuid();
