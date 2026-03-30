@@ -1,3 +1,5 @@
+use snforge_std::{CustomToken, Token, set_balance};
+
 // Starknet
 use starknet::ContractAddress;
 
@@ -10,3 +12,16 @@ pub const ADMIN: ContractAddress = 'ADMIN'.try_into().unwrap();
 
 // Initial token supply for tests
 pub const TOKEN_SUPPLY: u256 = 100 * TOKEN_UNIT;
+
+// Initial pool liquidity funded at setup
+pub const POOL_LIQUIDITY: u256 = TOKEN_UNIT * 10_000;
+
+pub fn cheat_erc20_balance(user: ContractAddress, token: ContractAddress, balance: u256) {
+    let token = Token::Custom(
+        CustomToken {
+            contract_address: token, balances_variable_selector: selector!("ERC20_balances"),
+        },
+    );
+    set_balance(user, balance, token);
+}
+

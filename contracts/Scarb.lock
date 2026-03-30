@@ -3,7 +3,7 @@ version = 1
 
 [[package]]
 name = "clicknrip"
-version = "1.8.0"
+version = "1.0.0"
 dependencies = [
  "dojo",
  "dojo_snf_test",

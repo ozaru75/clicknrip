@@ -1,4 +1,3 @@
-use core::num::traits::Zero;
 use starknet::ContractAddress;
 
 #[derive(Copy, Drop, Serde, Introspect, PartialEq, Debug, DojoStore, Default)]
@@ -34,9 +33,5 @@ pub impl GameImpl of GameTrait {
 
     fn assert_owned_by(self: @Game, caller: ContractAddress) {
         assert(*self.player == caller, 'not your game');
-    }
-
-    fn assert_available(self: @Game) {
-        assert((*self.player).is_zero(), 'game already exists');
     }
 }

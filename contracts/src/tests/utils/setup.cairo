@@ -5,6 +5,9 @@ use dojo_snf_test::world::WorldStorageTestTrait;
 use dojo_snf_test::{ContractDef, ContractDefTrait, NamespaceDef, TestResource, spawn_test_world};
 
 // OpenZeppelin
+use openzeppelin_interfaces::accesscontrol::{
+    IAccessControlDispatcher, IAccessControlDispatcherTrait,
+};
 use openzeppelin_interfaces::erc20::IERC20Dispatcher;
 
 // Snforge
@@ -13,18 +16,18 @@ use snforge_std::{
     stop_cheat_caller_address,
 };
 
-// Starknet
-use starknet::ContractAddress;
-
 // Project
 use crate::models::config::{CONFIG_ID, Config};
-use crate::pool::{IPoolDispatcher, IPoolDispatcherTrait};
+use crate::pool::IPoolDispatcher;
+use crate::roles::OPERATOR_ROLE;
 use crate::systems::actions::IActionsDispatcher;
 
 // Tests
-use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, TOKEN_SUPPLY};
+use crate::tests::utils::helpers::{
+    ADMIN, MIN_STAKE, POOL_LIQUIDITY, TOKEN_SUPPLY, cheat_erc20_balance,
+};
 
-pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher) {
+pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Dispatcher) {
     // Deploy collateral token (ERC20)
     let token_class = declare("ERC20Upgradeable").unwrap().contract_class();
     let name: ByteArray = "Token";
@@ -61,12 +64,16 @@ pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher) {
     };
     world.write_model_test(@config);
 
-    // Grant pool access to actions contract
-    // start_cheat_caller_address(pool_address, ADMIN);
-    // pool.set_game_contract(actions_address);
-    // stop_cheat_caller_address(pool_address);
+    // Seed pool with initial liquidity
+    cheat_erc20_balance(pool.contract_address, token.contract_address, POOL_LIQUIDITY);
 
-    (world, actions, pool)
+    // Grant the actions contract the operator role on the pool
+    start_cheat_caller_address(pool.contract_address, ADMIN);
+    IAccessControlDispatcher { contract_address: pool.contract_address }
+        .grant_role(OPERATOR_ROLE, actions.contract_address);
+    stop_cheat_caller_address(pool.contract_address);
+
+    (world, actions, pool, token)
 }
 
 fn namespace_def() -> NamespaceDef {

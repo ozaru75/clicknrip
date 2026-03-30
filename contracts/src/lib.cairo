@@ -1,3 +1,5 @@
+pub mod roles;
+
 pub mod systems {
     pub mod actions;
 }
