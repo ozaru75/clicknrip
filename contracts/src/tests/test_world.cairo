@@ -18,6 +18,7 @@ use starknet::ContractAddress;
 // Project
 use crate::models::game::{Game, GameStatus};
 use crate::models::player::PlayerStats;
+use crate::pool::IPoolDispatcherTrait;
 use crate::systems::actions::IActionsDispatcherTrait;
 
 // Tests
@@ -28,6 +29,7 @@ use crate::tests::utils::setup::setup;
 fn test_game_cashout() {
     let (world, mut actions, pool, token) = setup();
 
+    // Fund player with enough tokens to cover the stake
     let player: ContractAddress = 'player'.try_into().unwrap();
     let amount: u256 = 100 * TOKEN_UNIT;
 
@@ -38,10 +40,11 @@ fn test_game_cashout() {
     token.approve(pool.contract_address, amount);
     stop_cheat_caller_address(token.contract_address);
 
+    // Snapshot balances before new_game
     let player_balance_before = token.balance_of(player);
     let pool_balance_before = token.balance_of(pool.contract_address);
 
-    // Cheat caller as player and capture emitted events
+    // Start a new game
     start_cheat_caller_address(actions.contract_address, player);
     let mut spy = spy_events();
     let id = actions.new_game(amount);
@@ -102,6 +105,7 @@ fn test_game_cashout() {
 
     assert!(survived, "Player should survive level 1");
 
+    // Verify game advanced to level 2
     let game: Game = world.read_model(id);
     assert!(game.level == 2, "Game should advance to level 2");
     assert!(game.status == GameStatus::Active, "Game should remain active after level 1");
@@ -114,6 +118,7 @@ fn test_game_cashout() {
 
     assert!(survived, "Player should survive level 2");
 
+    // Verify game advanced to level 3
     let game: Game = world.read_model(id);
     assert!(game.level == 3, "Game should advance to level 3");
     assert!(game.status == GameStatus::Active, "Game should remain active after level 2");
@@ -126,10 +131,12 @@ fn test_game_cashout() {
     actions.cashout();
     stop_cheat_caller_address(actions.contract_address);
 
+    // Verify game state after cashout
     let game: Game = world.read_model(id);
     assert!(game.status == GameStatus::CashedOut, "Game should be cashed out");
     assert!(game.payout == expected_payout, "Game payout should match level 3 payout");
 
+    // Verify player received the payout
     let player_balance_after = token.balance_of(player);
     assert!(
         player_balance_after == player_balance_before + expected_payout,
@@ -138,7 +145,17 @@ fn test_game_cashout() {
         player_balance_after,
     );
 
+    // Verify player stats updated
     let stats: PlayerStats = world.read_model(player);
     assert!(stats.games_won == 1, "Player should have 1 win");
     assert!(stats.total_won == expected_payout, "total_won should match payout");
+
+    // Payout left the pool
+    assert!(
+        token.balance_of(pool.contract_address) == pool_balance_after - expected_payout,
+        "Pool balance should decrease by payout amount",
+    );
+
+    // No team fee accrued
+    assert!(pool.get_team_unclaimed() == 0, "Team unclaimed should be zero");
 }

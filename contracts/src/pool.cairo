@@ -3,10 +3,13 @@ use starknet::ContractAddress;
 #[starknet::interface]
 pub trait IPool<T> {
     fn get_liquidity(self: @T) -> u256;
+    fn get_team_unclaimed(self: @T) -> u256;
     fn deposit(ref self: T, from: ContractAddress, amount: u256);
     fn payout(ref self: T, to: ContractAddress, amount: u256);
     fn lock_reserve(ref self: T, amount: u256);
     fn unlock_reserve(ref self: T, amount: u256);
+    fn accrue_fee(ref self: T, amount: u256);
+    fn claim_fees(ref self: T, to: ContractAddress);
 }
 
 #[starknet::contract]
@@ -40,6 +43,7 @@ pub mod pool {
         src5: SRC5Component::Storage,
         token: ContractAddress,
         locked_funds: u256,
+        team_unclaimed: u256,
     }
 
     #[event]
@@ -65,7 +69,12 @@ pub mod pool {
     impl PoolImpl of super::IPool<ContractState> {
         fn get_liquidity(self: @ContractState) -> u256 {
             let token = IERC20Dispatcher { contract_address: self.token.read() };
-            token.balance_of(get_contract_address()) - self.locked_funds.read()
+            token.balance_of(get_contract_address())
+                - (self.locked_funds.read() + self.team_unclaimed.read())
+        }
+
+        fn get_team_unclaimed(self: @ContractState) -> u256 {
+            self.team_unclaimed.read()
         }
 
         fn deposit(ref self: ContractState, from: ContractAddress, amount: u256) {
@@ -88,6 +97,24 @@ pub mod pool {
         fn unlock_reserve(ref self: ContractState, amount: u256) {
             self.accesscontrol.assert_only_role(OPERATOR_ROLE);
             self.adjust_locked_funds(amount, false);
+        }
+
+        fn accrue_fee(ref self: ContractState, amount: u256) {
+            self.accesscontrol.assert_only_role(OPERATOR_ROLE);
+            let current = self.team_unclaimed.read();
+            self.team_unclaimed.write(current + amount);
+        }
+
+        fn claim_fees(ref self: ContractState, to: ContractAddress) {
+            self.accesscontrol.assert_only_role(ADMIN_ROLE);
+            assert(to.is_non_zero(), 'recipient is zero');
+            let amount = self.team_unclaimed.read();
+            if amount == 0 {
+                return;
+            }
+            self.team_unclaimed.write(0);
+            let token = IERC20Dispatcher { contract_address: self.token.read() };
+            token.transfer(to, amount);
         }
     }
 

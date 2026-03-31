@@ -62,7 +62,8 @@ pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Disp
     let config = Config {
         id: CONFIG_ID,
         min_stake: MIN_STAKE,
-        team_fee_bps: 0,
+        team_fee_bps: 100,
+        max_stake_bps: 1000, // max bet = 10% of liquidity
         pool: pool.contract_address,
         vrf_provider: VRF_PROVIDER,
     };

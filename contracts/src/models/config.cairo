@@ -9,6 +9,7 @@ pub struct Config {
     pub id: felt252,
     pub min_stake: u256,
     pub team_fee_bps: u16,
+    pub max_stake_bps: u16,
     pub pool: ContractAddress,
     pub vrf_provider: ContractAddress,
 }

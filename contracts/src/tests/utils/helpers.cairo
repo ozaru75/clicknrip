@@ -26,4 +26,3 @@ pub fn cheat_erc20_balance(user: ContractAddress, token: ContractAddress, balanc
     );
     set_balance(user, balance, token);
 }
-

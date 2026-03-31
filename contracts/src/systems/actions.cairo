@@ -3,6 +3,7 @@ pub trait IActions<T> {
     fn new_game(ref self: T, stake: u256) -> u32;
     fn new_guess(ref self: T, guess: u8) -> bool;
     fn cashout(ref self: T);
+    fn update_config(ref self: T, min_stake: u256, team_fee_bps: u16, max_stake_bps: u16);
     fn get_payout(self: @T, stake: u256, level: u8) -> u256;
     fn get_row_size(self: @T, level: u8) -> u8;
 }
@@ -119,13 +120,17 @@ pub mod actions {
             // Reject if player already has an active game
             last_game.assert_not_active();
 
-            // Reject stakes below the protocol minimum
+            let pool = IPoolDispatcher { contract_address: config.pool };
+
+            // Reject stakes outside the allowed range
             assert(stake >= config.min_stake, 'stake below minimum');
+            let max_stake = pool.get_liquidity() * config.max_stake_bps.into() / 10000;
+            assert(stake <= max_stake, 'stake above maximum');
 
             // Pool must lock extra liquidity to cover level 1 payout
             let first_level_payout = self.get_payout(stake, 1);
+            assert(first_level_payout > stake, 'stake too small for payout');
             let extra_to_lock = first_level_payout - stake;
-            let pool = IPoolDispatcher { contract_address: config.pool };
             pool.lock_reserve(extra_to_lock);
 
             // Pull stake from player into the pool
@@ -167,21 +172,20 @@ pub mod actions {
             let pool = IPoolDispatcher { contract_address: config.pool };
             let current_payout = self.get_payout(game.stake, game.level);
 
-            // Pre-check liquidity for the next level
-            let next_payout: u256 = if game.level < LEVEL_MAX {
+            // Check if the pool can cover the reserve delta for the next level
+            let (can_advance, next_payout) = if game.level < LEVEL_MAX {
                 let np = self.get_payout(game.stake, game.level + 1);
-                assert(pool.get_liquidity() >= np - current_payout, 'insufficient pool liquidity');
-                np
+                let delta = np - current_payout;
+                (pool.get_liquidity() >= delta, np)
             } else {
-                0
+                (false, 0)
             };
 
             // Consume randomness and derive the death tile
             let vrf = IVrfProviderDispatcher { contract_address: config.vrf_provider };
             let random: u256 = vrf.consume_random(Source::Nonce(player)).into();
 
-            let slot: u128 = random.low % row_size.into();
-            let death_tile: u8 = (slot + 1).try_into().unwrap();
+            let death_tile: u8 = ((random.low % row_size.into()) + 1).try_into().unwrap();
 
             let survived = guess != death_tile;
 
@@ -196,6 +200,11 @@ pub mod actions {
                 // Stake stays in pool as revenue; release the reserved extra liquidity
                 pool.unlock_reserve(current_payout - game.stake);
 
+                if config.team_fee_bps > 0 {
+                    let fee = game.stake * config.team_fee_bps.into() / 10000;
+                    pool.accrue_fee(fee);
+                }
+
                 game.status = GameStatus::Lost;
                 world.write_model(@game);
 
@@ -203,8 +212,8 @@ pub mod actions {
                     .emit_event(
                         @GameEnded { player, id: game.id, status: GameStatus::Lost, payout: 0 },
                     );
-            } else if game.level == LEVEL_MAX {
-                // Max level reached: auto-cashout
+            } else if !can_advance {
+                // Auto-cashout: max level reached or pool cannot cover the next reserve delta
                 self.finalize_cashout(ref world, pool, ref game, ref stats, player, current_payout);
             } else {
                 // Survive: lock the extra reserve for the next level
@@ -225,7 +234,7 @@ pub mod actions {
 
             game.assert_active();
 
-            // Player must survive at least one round before cashing out
+            // Player must have survived at least one guess before cashing out
             assert(game.level > 1, 'must guess before cashout');
 
             // Compute payout at the current level
@@ -237,10 +246,25 @@ pub mod actions {
             self.reentrancy_guard.end();
         }
 
+        fn update_config(
+            ref self: ContractState, min_stake: u256, team_fee_bps: u16, max_stake_bps: u16,
+        ) {
+            self.accesscontrol.assert_only_role(ADMIN_ROLE);
+
+            assert(max_stake_bps > 0, 'max stake bps is zero');
+
+            // Read existing config to preserve pool and vrf_provider addresses
+            let mut world: WorldStorage = self.world(@"clicknrip");
+            let mut config: Config = world.read_model(CONFIG_ID);
+            config.min_stake = min_stake;
+            config.team_fee_bps = team_fee_bps;
+            config.max_stake_bps = max_stake_bps;
+            world.write_model(@config);
+        }
+
         fn get_payout(self: @ContractState, stake: u256, level: u8) -> u256 {
-            assert(level >= 1 && level <= LEVEL_MAX, 'level out of range');
-            let multiplier = get_level_multiplier(level);
-            (stake * multiplier.into()) / 100
+            let multiplier: u256 = get_level_multiplier(level).into();
+            stake * multiplier / 100
         }
 
         fn get_row_size(self: @ContractState, level: u8) -> u8 {
@@ -292,7 +316,7 @@ pub mod actions {
 
     const ROW_SIZES: [u8; 8] = [7, 6, 5, 4, 3, 4, 5, 6];
 
-    // Precalculated multiplier values for each level (1-25)
+    // Precalculated multipliers for each level (1-25) at 95% RTP (5% house edge)
     // Values represent percentage multipliers (e.g., 110 = 1.10x)
     const LEVEL_MULTIPLIERS: [u32; 25] = [
         110, // Level 1:  1.10x
@@ -323,8 +347,8 @@ pub mod actions {
     ];
 
     pub fn get_level_multiplier(level: u8) -> u32 {
+        assert(level >= 1 && level <= LEVEL_MAX, 'level out of range');
         let multipliers_span = LEVEL_MULTIPLIERS.span();
         *multipliers_span[level.into() - 1]
     }
 }
-
