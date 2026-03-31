@@ -18,7 +18,7 @@ pub struct Game {
     pub status: GameStatus,
     pub level: u8,
     pub stake: u256,
-    pub payout: u128,
+    pub payout: u256,
 }
 
 #[generate_trait]
@@ -29,9 +29,5 @@ pub impl GameImpl of GameTrait {
 
     fn assert_not_active(self: @Game) {
         assert(*self.status != GameStatus::Active, 'game is active');
-    }
-
-    fn assert_owned_by(self: @Game, caller: ContractAddress) {
-        assert(*self.player == caller, 'not your game');
     }
 }

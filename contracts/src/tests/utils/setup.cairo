@@ -24,7 +24,7 @@ use crate::systems::actions::IActionsDispatcher;
 
 // Tests
 use crate::tests::utils::helpers::{
-    ADMIN, MIN_STAKE, POOL_LIQUIDITY, TOKEN_SUPPLY, cheat_erc20_balance,
+    ADMIN, MIN_STAKE, POOL_LIQUIDITY, TOKEN_SUPPLY, VRF_PROVIDER, cheat_erc20_balance,
 };
 
 pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Dispatcher) {
@@ -60,7 +60,11 @@ pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Disp
 
     // Write protocol config into the world
     let config = Config {
-        id: CONFIG_ID, min_stake: MIN_STAKE, team_fee_bps: 0, pool_address: pool.contract_address,
+        id: CONFIG_ID,
+        min_stake: MIN_STAKE,
+        team_fee_bps: 0,
+        pool: pool.contract_address,
+        vrf_provider: VRF_PROVIDER,
     };
     world.write_model_test(@config);
 
@@ -82,7 +86,8 @@ fn namespace_def() -> NamespaceDef {
         resources: [
             TestResource::Model("Game"), TestResource::Model("PlayerStats"),
             TestResource::Model("Config"), TestResource::Event("GameCreated"),
-            TestResource::Event("GameEnded"), TestResource::Contract("actions"),
+            TestResource::Event("GuessResolved"), TestResource::Event("GameEnded"),
+            TestResource::Contract("actions"),
         ]
             .span(),
     }

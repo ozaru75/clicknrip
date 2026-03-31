@@ -4,6 +4,7 @@ use starknet::ContractAddress;
 pub trait IPool<T> {
     fn get_liquidity(self: @T) -> u256;
     fn deposit(ref self: T, from: ContractAddress, amount: u256);
+    fn payout(ref self: T, to: ContractAddress, amount: u256);
     fn lock_reserve(ref self: T, amount: u256);
     fn unlock_reserve(ref self: T, amount: u256);
 }
@@ -73,6 +74,12 @@ pub mod pool {
             token.transfer_from(from, get_contract_address(), amount);
         }
 
+        fn payout(ref self: ContractState, to: ContractAddress, amount: u256) {
+            self.accesscontrol.assert_only_role(OPERATOR_ROLE);
+            let token = IERC20Dispatcher { contract_address: self.token.read() };
+            token.transfer(to, amount);
+        }
+
         fn lock_reserve(ref self: ContractState, amount: u256) {
             self.accesscontrol.assert_only_role(OPERATOR_ROLE);
             self.adjust_locked_funds(amount, true);
@@ -86,9 +93,6 @@ pub mod pool {
 
     #[generate_trait]
     impl Internal of InternalTrait {
-        // Increases or decreases locked_funds by amount
-        // When locking, asserts that available liquidity covers the amount
-        // When unlocking, asserts that locked_funds does not underflow
         fn adjust_locked_funds(ref self: ContractState, amount: u256, lock: bool) {
             let current = self.locked_funds.read();
             if lock {

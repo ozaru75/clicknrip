@@ -2,7 +2,9 @@
 pub trait IActions<T> {
     fn new_game(ref self: T, stake: u256) -> u32;
     fn new_guess(ref self: T, guess: u8) -> bool;
-    fn get_round_payout(self: @T, stake: u256, round: u8) -> u256;
+    fn cashout(ref self: T);
+    fn get_payout(self: @T, stake: u256, level: u8) -> u256;
+    fn get_row_size(self: @T, level: u8) -> u8;
 }
 
 #[dojo::contract]
@@ -29,7 +31,7 @@ pub mod actions {
     use crate::models::player::PlayerStats;
     use crate::pool::{IPoolDispatcher, IPoolDispatcherTrait};
     use crate::roles::{ADMIN_ROLE, OPERATOR_ROLE};
-    use super::get_round_multiplier;
+    use crate::vrf::{IVrfProviderDispatcher, IVrfProviderDispatcherTrait, Source};
 
     component!(path: AccessControlComponent, storage: accesscontrol, event: AccessControlEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
@@ -44,7 +46,7 @@ pub mod actions {
 
     impl ReentrancyGuardInternalImpl = ReentrancyGuardComponent::InternalImpl<ContractState>;
 
-    pub const MAX_ROUNDS: u8 = 25;
+    pub const LEVEL_MAX: u8 = 25;
 
     #[storage]
     pub struct Storage {
@@ -78,12 +80,24 @@ pub mod actions {
 
     #[derive(Copy, Drop, Serde)]
     #[dojo::event]
+    pub struct GuessResolved {
+        #[key]
+        pub player: ContractAddress,
+        pub id: u32,
+        pub level: u8,
+        pub guess: u8,
+        pub death_tile: u8,
+        pub survived: bool,
+    }
+
+    #[derive(Copy, Drop, Serde)]
+    #[dojo::event]
     pub struct GameEnded {
         #[key]
         pub player: ContractAddress,
         pub id: u32,
         pub status: GameStatus,
-        pub payout: u128,
+        pub payout: u256,
     }
 
     fn dojo_init(ref self: ContractState, admin: ContractAddress, operator: ContractAddress) {
@@ -108,12 +122,10 @@ pub mod actions {
             // Reject stakes below the protocol minimum
             assert(stake >= config.min_stake, 'stake below minimum');
 
-            // Compute extra liquidity the pool must lock to guarantee the round 1 payout
-            let first_round_payout = self.get_round_payout(stake, 1);
-            let extra_to_lock = first_round_payout - stake;
-
-            // Reserve extra liquidity in the pool to cover the round 1 payout
-            let pool = IPoolDispatcher { contract_address: config.pool_address };
+            // Pool must lock extra liquidity to cover level 1 payout
+            let first_level_payout = self.get_payout(stake, 1);
+            let extra_to_lock = first_level_payout - stake;
+            let pool = IPoolDispatcher { contract_address: config.pool };
             pool.lock_reserve(extra_to_lock);
 
             // Pull stake from player into the pool
@@ -131,7 +143,7 @@ pub mod actions {
             // Update player stats
             stats.last_game_id = id;
             stats.games_played += 1;
-            stats.total_wagered += stake;
+            stats.total_staked += stake;
             world.write_model(@stats);
 
             world.emit_event(@GameCreated { player, id, stake });
@@ -142,13 +154,98 @@ pub mod actions {
         }
 
         fn new_guess(ref self: ContractState, guess: u8) -> bool {
-            true
+            self.reentrancy_guard.start();
+
+            let (mut world, config, mut game, mut stats, player) = self.get_context();
+
+            game.assert_active();
+
+            // Reject guess outside the valid range for this level
+            let row_size = self.get_row_size(game.level);
+            assert(guess >= 1 && guess <= row_size, 'guess out of range');
+
+            let pool = IPoolDispatcher { contract_address: config.pool };
+            let current_payout = self.get_payout(game.stake, game.level);
+
+            // Pre-check liquidity for the next level
+            let next_payout: u256 = if game.level < LEVEL_MAX {
+                let np = self.get_payout(game.stake, game.level + 1);
+                assert(pool.get_liquidity() >= np - current_payout, 'insufficient pool liquidity');
+                np
+            } else {
+                0
+            };
+
+            // Consume randomness and derive the death tile
+            let vrf = IVrfProviderDispatcher { contract_address: config.vrf_provider };
+            let random: u256 = vrf.consume_random(Source::Nonce(player)).into();
+
+            let slot: u128 = random.low % row_size.into();
+            let death_tile: u8 = (slot + 1).try_into().unwrap();
+
+            let survived = guess != death_tile;
+
+            world
+                .emit_event(
+                    @GuessResolved {
+                        player, id: game.id, level: game.level, guess, death_tile, survived,
+                    },
+                );
+
+            if !survived {
+                // Stake stays in pool as revenue; release the reserved extra liquidity
+                pool.unlock_reserve(current_payout - game.stake);
+
+                game.status = GameStatus::Lost;
+                world.write_model(@game);
+
+                world
+                    .emit_event(
+                        @GameEnded { player, id: game.id, status: GameStatus::Lost, payout: 0 },
+                    );
+            } else if game.level == LEVEL_MAX {
+                // Max level reached: auto-cashout
+                self.finalize_cashout(ref world, pool, ref game, ref stats, player, current_payout);
+            } else {
+                // Survive: lock the extra reserve for the next level
+                pool.lock_reserve(next_payout - current_payout);
+                game.level += 1;
+                world.write_model(@game);
+            }
+
+            self.reentrancy_guard.end();
+
+            survived
         }
 
-        fn get_round_payout(self: @ContractState, stake: u256, round: u8) -> u256 {
-            assert(round >= 1 && round <= MAX_ROUNDS, 'round out of range');
-            let multiplier = get_round_multiplier(round);
+        fn cashout(ref self: ContractState) {
+            self.reentrancy_guard.start();
+
+            let (mut world, config, mut game, mut stats, player) = self.get_context();
+
+            game.assert_active();
+
+            // Player must survive at least one round before cashing out
+            assert(game.level > 1, 'must guess before cashout');
+
+            // Compute payout at the current level
+            let payout = self.get_payout(game.stake, game.level);
+
+            let pool = IPoolDispatcher { contract_address: config.pool };
+            self.finalize_cashout(ref world, pool, ref game, ref stats, player, payout);
+
+            self.reentrancy_guard.end();
+        }
+
+        fn get_payout(self: @ContractState, stake: u256, level: u8) -> u256 {
+            assert(level >= 1 && level <= LEVEL_MAX, 'level out of range');
+            let multiplier = get_level_multiplier(level);
             (stake * multiplier.into()) / 100
+        }
+
+        fn get_row_size(self: @ContractState, level: u8) -> u8 {
+            assert(level >= 1 && level <= LEVEL_MAX, 'level out of range');
+            *ROW_SIZES.span()[((level - 1) & 7).into()]
         }
     }
 
@@ -165,40 +262,69 @@ pub mod actions {
 
             (world, config, game, stats, player)
         }
+
+        fn finalize_cashout(
+            self: @ContractState,
+            ref world: WorldStorage,
+            pool: IPoolDispatcher,
+            ref game: Game,
+            ref stats: PlayerStats,
+            player: ContractAddress,
+            payout: u256,
+        ) {
+            pool.unlock_reserve(payout - game.stake);
+            pool.payout(player, payout);
+
+            game.status = GameStatus::CashedOut;
+            game.payout = payout;
+            world.write_model(@game);
+
+            stats.games_won += 1;
+            stats.total_won += payout;
+            world.write_model(@stats);
+
+            world
+                .emit_event(
+                    @GameEnded { player, id: game.id, status: GameStatus::CashedOut, payout },
+                );
+        }
+    }
+
+    const ROW_SIZES: [u8; 8] = [7, 6, 5, 4, 3, 4, 5, 6];
+
+    // Precalculated multiplier values for each level (1-25)
+    // Values represent percentage multipliers (e.g., 110 = 1.10x)
+    const LEVEL_MULTIPLIERS: [u32; 25] = [
+        110, // Level 1:  1.10x
+        133, // Level 2:  1.33x
+        166, // Level 3:  1.66x
+        221, // Level 4:  2.21x
+        332, // Level 5:  3.32x
+        443, // Level 6:  4.43x
+        554, // Level 7:  5.54x
+        665, // Level 8:  6.65x
+        775, // Level 9:  7.75x
+        931, // Level 10: 9.31x
+        1163, // Level 11: 11.63x
+        1551, // Level 12: 15.51x
+        2327, // Level 13: 23.27x
+        3103, // Level 14: 31.03x
+        3879, // Level 15: 38.79x
+        4655, // Level 16: 46.55x
+        5430, // Level 17: 54.30x
+        6517, // Level 18: 65.17x
+        8146, // Level 19: 81.46x
+        10861, // Level 20: 108.61x
+        16292, // Level 21: 162.92x
+        21723, // Level 22: 217.23x
+        27154, // Level 23: 271.54x
+        32585, // Level 24: 325.85x
+        38015 // Level 25: 380.15x
+    ];
+
+    pub fn get_level_multiplier(level: u8) -> u32 {
+        let multipliers_span = LEVEL_MULTIPLIERS.span();
+        *multipliers_span[level.into() - 1]
     }
 }
 
-// Precalculated multiplier values for each round (1-25)
-// Values represent percentage multipliers (e.g., 110 = 1.10x)
-const ROUND_MULTIPLIERS: [u32; 25] = [
-    110, // Round 1:  1.10x
-    133, // Round 2:  1.33x
-    166, // Round 3:  1.66x
-    221, // Round 4:  2.21x
-    332, // Round 5:  3.32x
-    443, // Round 6:  4.43x
-    554, // Round 7:  5.54x
-    665, // Round 8:  6.65x
-    775, // Round 9:  7.75x
-    931, // Round 10: 9.31x
-    1163, // Round 11: 11.63x
-    1551, // Round 12: 15.51x
-    2327, // Round 13: 23.27x
-    3103, // Round 14: 31.03x
-    3879, // Round 15: 38.79x
-    4655, // Round 16: 46.55x
-    5430, // Round 17: 54.30x
-    6517, // Round 18: 65.17x
-    8146, // Round 19: 81.46x
-    10861, // Round 20: 108.61x
-    16292, // Round 21: 162.92x
-    21723, // Round 22: 217.23x
-    27154, // Round 23: 271.54x
-    32585, // Round 24: 325.85x
-    38015 // Round 25: 380.15x
-];
-
-pub fn get_round_multiplier(round: u8) -> u32 {
-    let multipliers_span = ROUND_MULTIPLIERS.span();
-    *multipliers_span[round.into() - 1]
-}

@@ -1,4 +1,5 @@
 pub mod roles;
+pub mod vrf;
 
 pub mod systems {
     pub mod actions;
