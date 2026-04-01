@@ -24,11 +24,12 @@ use crate::systems::actions::IActionsDispatcher;
 
 // Tests
 use crate::tests::utils::helpers::{
-    ADMIN, MIN_STAKE, POOL_LIQUIDITY, TOKEN_SUPPLY, VRF_PROVIDER, cheat_erc20_balance,
+    ADMIN, MIN_STAKE, POOL_LIQUIDITY, TEAM_FEE_BPS, TOKEN_SUPPLY, VRF_PROVIDER, cheat_erc20_balance,
 };
 
+// Deploy all contracts, seed initial state, and return the test harness.
 pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Dispatcher) {
-    // Deploy collateral token (ERC20)
+    // Deploy ERC20 token
     let token_class = declare("ERC20Upgradeable").unwrap().contract_class();
     let name: ByteArray = "Token";
     let symbol: ByteArray = "TKN";
@@ -54,16 +55,15 @@ pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Disp
     let mut world = spawn_test_world([ndef].span());
     world.sync_perms_and_inits(contract_defs());
 
-    // Resolve actions contract address
     let (contract_address, _) = world.dns(@"actions").unwrap();
     let actions = IActionsDispatcher { contract_address };
 
-    // Write protocol config into the world
+    // Write protocol config
     let config = Config {
         id: CONFIG_ID,
         min_stake: MIN_STAKE,
-        team_fee_bps: 100,
-        max_stake_bps: 1000, // max bet = 10% of liquidity
+        team_fee_bps: TEAM_FEE_BPS,
+        max_stake_bps: 1000, // 10% of liquidity
         pool: pool.contract_address,
         vrf_provider: VRF_PROVIDER,
     };
@@ -72,7 +72,7 @@ pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Disp
     // Seed pool with initial liquidity
     cheat_erc20_balance(pool.contract_address, token.contract_address, POOL_LIQUIDITY);
 
-    // Grant the actions contract the operator role on the pool
+    // Grant OPERATOR_ROLE on the pool to the actions contract
     start_cheat_caller_address(pool.contract_address, ADMIN);
     IAccessControlDispatcher { contract_address: pool.contract_address }
         .grant_role(OPERATOR_ROLE, actions.contract_address);

@@ -19,5 +19,7 @@ pub mod tests {
         pub mod helpers;
         pub mod setup;
     }
-    pub mod test_world;
+    pub mod test_cashout;
+    pub mod test_new_game;
+    pub mod test_new_guess;
 }

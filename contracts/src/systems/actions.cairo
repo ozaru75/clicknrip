@@ -129,7 +129,6 @@ pub mod actions {
 
             // Pool must lock extra liquidity to cover level 1 payout
             let first_level_payout = self.get_payout(stake, 1);
-            assert(first_level_payout > stake, 'stake too small for payout');
             let extra_to_lock = first_level_payout - stake;
             pool.lock_reserve(extra_to_lock);
 
@@ -172,13 +171,13 @@ pub mod actions {
             let pool = IPoolDispatcher { contract_address: config.pool };
             let current_payout = self.get_payout(game.stake, game.level);
 
-            // Check if the pool can cover the reserve delta for the next level
-            let (can_advance, next_payout) = if game.level < LEVEL_MAX {
+            // If not at max level ensure the pool can cover the reserve delta
+            let next_payout = if game.level < LEVEL_MAX {
                 let np = self.get_payout(game.stake, game.level + 1);
-                let delta = np - current_payout;
-                (pool.get_liquidity() >= delta, np)
+                assert(pool.get_liquidity() >= np - current_payout, 'insufficient liquidity');
+                np
             } else {
-                (false, 0)
+                0
             };
 
             // Consume randomness and derive the death tile
@@ -212,8 +211,8 @@ pub mod actions {
                     .emit_event(
                         @GameEnded { player, id: game.id, status: GameStatus::Lost, payout: 0 },
                     );
-            } else if !can_advance {
-                // Auto-cashout: max level reached or pool cannot cover the next reserve delta
+            } else if game.level == LEVEL_MAX {
+                // Max level reached: cashout at current payout
                 self.finalize_cashout(ref world, pool, ref game, ref stats, player, current_payout);
             } else {
                 // Survive: lock the extra reserve for the next level
