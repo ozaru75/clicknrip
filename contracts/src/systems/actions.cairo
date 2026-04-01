@@ -4,6 +4,9 @@ pub trait IActions<T> {
     fn new_guess(ref self: T, guess: u8) -> bool;
     fn cashout(ref self: T);
     fn update_config(ref self: T, min_stake: u256, team_fee_bps: u16, max_stake_bps: u16);
+    fn pause(ref self: T);
+    fn unpause(ref self: T);
+    fn admin_force_resolve(ref self: T, game_id: u32);
     fn get_payout(self: @T, stake: u256, level: u8) -> u256;
     fn get_row_size(self: @T, level: u8) -> u8;
 }
@@ -21,10 +24,10 @@ pub mod actions {
     // OpenZeppelin
     use openzeppelin_access::accesscontrol::AccessControlComponent;
     use openzeppelin_introspection::src5::SRC5Component;
-    use openzeppelin_security::ReentrancyGuardComponent;
+    use openzeppelin_security::{PausableComponent, ReentrancyGuardComponent};
 
     // Starknet
-    use starknet::{ContractAddress, get_caller_address};
+    use starknet::{ContractAddress, get_block_timestamp, get_caller_address};
 
     // Project
     use crate::models::config::{CONFIG_ID, Config};
@@ -36,6 +39,7 @@ pub mod actions {
 
     component!(path: AccessControlComponent, storage: accesscontrol, event: AccessControlEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
+    component!(path: PausableComponent, storage: pausable, event: PausableEvent);
     component!(
         path: ReentrancyGuardComponent, storage: reentrancy_guard, event: ReentrancyGuardEvent,
     );
@@ -45,9 +49,16 @@ pub mod actions {
         AccessControlComponent::AccessControlImpl<ContractState>;
     impl AccessControlInternalImpl = AccessControlComponent::InternalImpl<ContractState>;
 
+    #[abi(embed_v0)]
+    impl PausableImpl = PausableComponent::PausableImpl<ContractState>;
+    impl PausableInternalImpl = PausableComponent::InternalImpl<ContractState>;
+
     impl ReentrancyGuardInternalImpl = ReentrancyGuardComponent::InternalImpl<ContractState>;
 
     pub const LEVEL_MAX: u8 = 25;
+
+    // 7 days in seconds; admin can only force-resolve games stuck longer than this
+    pub const FORCE_RESOLVE_DELAY: u64 = 7 * 24 * 60 * 60;
 
     #[storage]
     pub struct Storage {
@@ -55,6 +66,8 @@ pub mod actions {
         accesscontrol: AccessControlComponent::Storage,
         #[substorage(v0)]
         src5: SRC5Component::Storage,
+        #[substorage(v0)]
+        pausable: PausableComponent::Storage,
         #[substorage(v0)]
         reentrancy_guard: ReentrancyGuardComponent::Storage,
     }
@@ -66,6 +79,8 @@ pub mod actions {
         AccessControlEvent: AccessControlComponent::Event,
         #[flat]
         SRC5Event: SRC5Component::Event,
+        #[flat]
+        PausableEvent: PausableComponent::Event,
         #[flat]
         ReentrancyGuardEvent: ReentrancyGuardComponent::Event,
     }
@@ -113,6 +128,7 @@ pub mod actions {
     #[abi(embed_v0)]
     impl ActionsImpl of super::IActions<ContractState> {
         fn new_game(ref self: ContractState, stake: u256) -> u32 {
+            self.pausable.assert_not_paused();
             self.reentrancy_guard.start();
 
             let (mut world, config, last_game, mut stats, player) = self.get_context();
@@ -141,7 +157,15 @@ pub mod actions {
             // Write game state
             world
                 .write_model(
-                    @Game { id, player, status: GameStatus::Active, level: 1, stake, payout: 0 },
+                    @Game {
+                        id,
+                        player,
+                        status: GameStatus::Active,
+                        level: 1,
+                        stake,
+                        payout: 0,
+                        started_at: get_block_timestamp(),
+                    },
                 );
 
             // Update player stats
@@ -158,6 +182,7 @@ pub mod actions {
         }
 
         fn new_guess(ref self: ContractState, guess: u8) -> bool {
+            self.pausable.assert_not_paused();
             self.reentrancy_guard.start();
 
             let (mut world, config, mut game, mut stats, player) = self.get_context();
@@ -227,6 +252,7 @@ pub mod actions {
         }
 
         fn cashout(ref self: ContractState) {
+            self.pausable.assert_not_paused();
             self.reentrancy_guard.start();
 
             let (mut world, config, mut game, mut stats, player) = self.get_context();
@@ -259,6 +285,47 @@ pub mod actions {
             config.team_fee_bps = team_fee_bps;
             config.max_stake_bps = max_stake_bps;
             world.write_model(@config);
+        }
+
+        fn pause(ref self: ContractState) {
+            self.accesscontrol.assert_only_role(ADMIN_ROLE);
+            self.pausable.pause();
+        }
+
+        fn unpause(ref self: ContractState) {
+            self.accesscontrol.assert_only_role(ADMIN_ROLE);
+            self.pausable.unpause();
+        }
+
+        fn admin_force_resolve(ref self: ContractState, game_id: u32) {
+            self.accesscontrol.assert_only_role(ADMIN_ROLE);
+            self.reentrancy_guard.start();
+
+            let mut world: WorldStorage = self.world(@"clicknrip");
+            let config: Config = world.read_model(CONFIG_ID);
+            let mut game: Game = world.read_model(game_id);
+
+            game.assert_active();
+
+            let elapsed = get_block_timestamp() - game.started_at;
+            assert(elapsed >= FORCE_RESOLVE_DELAY, 'too early to force resolve');
+
+            // Release the locked reserve; stake stays in pool as revenue
+            let locked_reserve = self.get_payout(game.stake, game.level) - game.stake;
+            let pool = IPoolDispatcher { contract_address: config.pool };
+            pool.unlock_reserve(locked_reserve);
+
+            game.status = GameStatus::Lost;
+            world.write_model(@game);
+
+            world
+                .emit_event(
+                    @GameEnded {
+                        player: game.player, id: game.id, status: GameStatus::Lost, payout: 0,
+                    },
+                );
+
+            self.reentrancy_guard.end();
         }
 
         fn get_payout(self: @ContractState, stake: u256, level: u8) -> u256 {

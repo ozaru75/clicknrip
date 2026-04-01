@@ -20,6 +20,8 @@ pub mod tests {
         pub mod setup;
     }
     pub mod test_cashout;
+    pub mod test_force_resolve;
     pub mod test_new_game;
     pub mod test_new_guess;
+    pub mod test_pause;
 }

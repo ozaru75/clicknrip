@@ -19,6 +19,7 @@ pub struct Game {
     pub level: u8,
     pub stake: u256,
     pub payout: u256,
+    pub started_at: u64,
 }
 
 #[generate_trait]
