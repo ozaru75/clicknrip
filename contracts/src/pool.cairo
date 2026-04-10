@@ -25,6 +25,8 @@ pub mod pool {
     // Starknet
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
     use starknet::{ContractAddress, get_contract_address};
+
+    // Project
     use crate::roles::{ADMIN_ROLE, OPERATOR_ROLE};
 
     component!(path: AccessControlComponent, storage: accesscontrol, event: AccessControlEvent);
@@ -56,12 +58,12 @@ pub mod pool {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner: ContractAddress, token: ContractAddress) {
-        assert(owner.is_non_zero(), 'owner address is zero');
+    fn constructor(ref self: ContractState, admin: ContractAddress, token: ContractAddress) {
+        assert(admin.is_non_zero(), 'admin address is zero');
         assert(token.is_non_zero(), 'token address is zero');
 
         self.accesscontrol.initializer();
-        self.accesscontrol._grant_role(ADMIN_ROLE, owner);
+        self.accesscontrol._grant_role(ADMIN_ROLE, admin);
         self.token.write(token);
     }
 

@@ -2,3 +2,6 @@ target
 dojo_mainnet.toml
 dojo_sepolia.toml
 .snfoundry_cache
+accounts
+manifest_dev.json
+deployments

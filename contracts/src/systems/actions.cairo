@@ -1,9 +1,18 @@
+use starknet::ContractAddress;
+
 #[starknet::interface]
 pub trait IActions<T> {
     fn new_game(ref self: T, stake: u256) -> u32;
     fn new_guess(ref self: T, guess: u8) -> bool;
     fn cashout(ref self: T);
-    fn update_config(ref self: T, min_stake: u256, team_fee_bps: u16, max_stake_bps: u16);
+    fn update_config(
+        ref self: T,
+        min_stake: u256,
+        team_fee_bps: u16,
+        max_stake_bps: u16,
+        pool: ContractAddress,
+        vrf_provider: ContractAddress,
+    );
     fn pause(ref self: T);
     fn unpause(ref self: T);
     fn admin_force_resolve(ref self: T, game_id: u32);
@@ -272,19 +281,26 @@ pub mod actions {
         }
 
         fn update_config(
-            ref self: ContractState, min_stake: u256, team_fee_bps: u16, max_stake_bps: u16,
+            ref self: ContractState,
+            min_stake: u256,
+            team_fee_bps: u16,
+            max_stake_bps: u16,
+            pool: ContractAddress,
+            vrf_provider: ContractAddress,
         ) {
             self.accesscontrol.assert_only_role(ADMIN_ROLE);
 
             assert(max_stake_bps > 0, 'max stake bps is zero');
+            assert(pool.is_non_zero(), 'pool address is zero');
+            assert(vrf_provider.is_non_zero(), 'vrf provider is zero');
 
-            // Read existing config to preserve pool and vrf_provider addresses
             let mut world: WorldStorage = self.world(@"clicknrip");
-            let mut config: Config = world.read_model(CONFIG_ID);
-            config.min_stake = min_stake;
-            config.team_fee_bps = team_fee_bps;
-            config.max_stake_bps = max_stake_bps;
-            world.write_model(@config);
+            world
+                .write_model(
+                    @Config {
+                        id: CONFIG_ID, min_stake, team_fee_bps, max_stake_bps, pool, vrf_provider,
+                    },
+                );
         }
 
         fn pause(ref self: ContractState) {

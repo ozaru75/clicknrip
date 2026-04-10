@@ -22,7 +22,7 @@ use crate::pool::IPoolDispatcherTrait;
 use crate::systems::actions::IActionsDispatcherTrait;
 
 // Tests
-use crate::tests::utils::helpers::{MIN_STAKE, TEAM_FEE_BPS, VRF_PROVIDER, fund_and_approve};
+use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, TEAM_FEE_BPS, VRF_PROVIDER, fund_and_approve};
 use crate::tests::utils::setup::setup;
 
 #[test]
@@ -260,6 +260,6 @@ fn test_update_config_unauthorized() {
     let player: ContractAddress = 'player'.try_into().unwrap();
 
     start_cheat_caller_address(actions.contract_address, player);
-    actions.update_config(MIN_STAKE, 100, 500);
+    actions.update_config(MIN_STAKE, 100, 500, ADMIN, VRF_PROVIDER);
     stop_cheat_caller_address(actions.contract_address);
 }

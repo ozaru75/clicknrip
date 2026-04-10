@@ -1,0 +1,28 @@
+[world]
+name = "clicknrip"
+seed = "clicknrip"
+
+[namespace]
+default = "clicknrip"
+
+[env]
+rpc_url = "http://localhost:5050/"
+account_address = "0x127fd5f1fe78a71f8bcd1fec63e3fe2f0486b6ecd5c86a0466c3a21fa5cfcec"
+private_key = "0xc5b2fcab997346f3ea1c00b002ecf6f382c5f9c9659a3894eb783c5320f912"
+
+[writers]
+"clicknrip" = ["clicknrip-actions"]
+
+[init_call_args]
+"clicknrip-actions" = [
+  "0x13d9ee239f33fea4f8785b9e3870ade909e20a9599ae7cd62c1c292b73af1b7",  # admin
+  "0x17cc6ca902ed4e8baa8463a7009ff18cc294fa85a94b4ce6ac30a9ebd6057c7"  # operator
+]
+
+[[external_contracts]]
+contract_name = "pool"
+salt = "0"
+constructor_data = [
+  "0x13d9ee239f33fea4f8785b9e3870ade909e20a9599ae7cd62c1c292b73af1b7",  # admin
+  "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"  # strk token
+]
