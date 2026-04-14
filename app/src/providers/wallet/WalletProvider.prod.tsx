@@ -37,11 +37,10 @@ export function WalletProvider(props: ParentProps) {
     localStorage.getItem(STORAGE_KEY),
   );
 
-  // Derive address from live wallet, fall back to cached value before probe settles.
-  const address = createMemo(() => {
-    const w = wallet();
-    return w ? w.address.toString() : storedAddr();
-  });
+  // Show cached address instantly on load, switch to live wallet once probe settles
+  const address = createMemo(
+    () => wallet()?.address.toString() ?? storedAddr(),
+  );
 
   function persistAddress(addr: string | null) {
     if (addr) {
@@ -73,8 +72,7 @@ export function WalletProvider(props: ParentProps) {
     setConnecting(true);
     setError(null);
     try {
-      // connectCartridge never resolves if the user closes the popup without logging in.
-      // Race against a MutationObserver watching for display:none on the iframe container.
+      // connectCartridge never resolves if the user closes the popup without logging in
       let observer: MutationObserver | undefined;
       const w = await Promise.race([
         sdk.connectCartridge({ policies: GAME_POLICIES }),
@@ -111,7 +109,6 @@ export function WalletProvider(props: ParentProps) {
     try {
       await wallet()?.disconnect();
     } catch {
-      // ignore -- session cleanup already completed
     } finally {
       setWallet(null);
       persistAddress(null);

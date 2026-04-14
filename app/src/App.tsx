@@ -1,6 +1,6 @@
 import { Home } from "./pages/Home";
 import { Router, Route } from "@solidjs/router";
-import { WalletProvider } from "./providers/WalletProvider";
+import { WalletProvider } from "@/providers/wallet";
 
 function App() {
   return (

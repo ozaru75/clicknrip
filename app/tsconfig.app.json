@@ -20,7 +20,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    "paths": {
+      "@/providers/wallet": ["./src/providers/wallet/WalletProvider.prod.tsx"]
+    }
   },
   "include": ["src"]
 }

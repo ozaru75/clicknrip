@@ -1,5 +1,5 @@
 import { Show } from "solid-js";
-import { useWallet } from "../providers/WalletProvider";
+import { useWallet } from "@/providers/wallet";
 
 export function Home() {
   const wallet = useWallet();
