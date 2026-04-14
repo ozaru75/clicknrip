@@ -4,7 +4,13 @@ import {
   useContext,
   type ParentProps,
 } from "solid-js";
-import { StarkZap, StarkSigner, type WalletInterface } from "starkzap";
+import {
+  StarkZap,
+  StarkSigner,
+  fromAddress,
+  type WalletInterface,
+} from "starkzap";
+import { config } from "@/config";
 
 const DEV_ACCOUNT_ADDRESS =
   "0x2af9427c5a277474c079a1283c880ee8a6f0f8fbf73ce969c08d88befec1bba";
@@ -12,8 +18,8 @@ const DEV_PRIVATE_KEY =
   "0x1800000000300000180000000000030000000000003006001800006600";
 
 const sdk = new StarkZap({
-  network: "devnet",
-  rpcUrl: import.meta.env.VITE_RPC_URL,
+  network: config.network,
+  rpcUrl: config.rpcUrl,
 });
 
 type WalletContextValue = {
@@ -23,6 +29,7 @@ type WalletContextValue = {
   error: () => string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  wallet: () => WalletInterface | null;
 };
 
 const WalletContext = createContext<WalletContextValue>();
@@ -30,22 +37,23 @@ const WalletContext = createContext<WalletContextValue>();
 async function connectDevWallet(): Promise<WalletInterface> {
   return sdk.connectWallet({
     account: { signer: new StarkSigner(DEV_PRIVATE_KEY) },
-    accountAddress: DEV_ACCOUNT_ADDRESS,
+    accountAddress: fromAddress(DEV_ACCOUNT_ADDRESS),
   });
 }
 
 export function WalletProvider(props: ParentProps) {
-  const [wallet, { refetch, mutate }] = createResource(connectDevWallet);
+  const [walletResource, { refetch, mutate }] =
+    createResource(connectDevWallet);
 
-  const address = () => wallet()?.address.toString() ?? null;
+  const address = () => walletResource()?.address.toString() ?? null;
 
   const ready = () =>
-    wallet.state !== "unresolved" && wallet.state !== "pending";
+    walletResource.state !== "unresolved" && walletResource.state !== "pending";
   const connecting = () =>
-    wallet.state === "pending" || wallet.state === "refreshing";
+    walletResource.state === "pending" || walletResource.state === "refreshing";
 
   const error = () => {
-    const e = wallet.error;
+    const e = walletResource.error;
     if (!e) return null;
     return e instanceof Error ? e.message : String(e);
   };
@@ -58,9 +66,11 @@ export function WalletProvider(props: ParentProps) {
     mutate(undefined);
   }
 
+  const wallet = () => walletResource() ?? null;
+
   return (
     <WalletContext.Provider
-      value={{ address, ready, connecting, error, connect, disconnect }}
+      value={{ address, ready, connecting, error, connect, disconnect, wallet }}
     >
       {props.children}
     </WalletContext.Provider>

@@ -6,10 +6,11 @@ import {
   useContext,
   type ParentProps,
 } from "solid-js";
-import { StarkZap, type WalletInterface, type NetworkName } from "starkzap";
+import { StarkZap, type WalletInterface } from "starkzap";
+import { config } from "@/config";
 
 const sdk = new StarkZap({
-  network: (import.meta.env.VITE_NETWORK as NetworkName) ?? "sepolia",
+  network: config.network,
 });
 
 // TODO: populate once contract addresses are finalized
@@ -24,6 +25,7 @@ type WalletContextValue = {
   error: () => string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  wallet: () => WalletInterface | null;
 };
 
 const WalletContext = createContext<WalletContextValue>();
@@ -118,7 +120,7 @@ export function WalletProvider(props: ParentProps) {
 
   return (
     <WalletContext.Provider
-      value={{ address, ready, connecting, error, connect, disconnect }}
+      value={{ address, ready, connecting, error, connect, disconnect, wallet }}
     >
       {props.children}
     </WalletContext.Provider>

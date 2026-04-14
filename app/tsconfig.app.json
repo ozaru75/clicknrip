@@ -23,7 +23,8 @@
     "noFallthroughCasesInSwitch": true,
 
     "paths": {
-      "@/providers/wallet": ["./src/providers/wallet/WalletProvider.prod.tsx"]
+      "@/providers/wallet": ["./src/providers/wallet/WalletProvider.prod.tsx"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src"]
