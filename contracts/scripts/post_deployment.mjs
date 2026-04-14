@@ -3,12 +3,11 @@
 // Run after `scarb run migrate-dev/sepolia/mainnet` to wire up the deployed contracts:
 //   1. Grant OPERATOR_ROLE on Pool to Actions (allows Actions to lock/unlock reserves and payout)
 //   2. Call update_config on Actions to set game parameters and contract addresses
-//   3. Write a deployments/<profile>.json summary for use by the app and tooling
 //
 // Usage: node scripts/post_deployment.mjs <dev|sepolia|mainnet>
 
 import { execSync } from "child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { readFileSync } from "fs";
 import { resolve } from "path";
 
 // CLI
@@ -26,9 +25,6 @@ if (!PROFILES.includes(profile)) {
 
 const CONFIG = {
   dev: {
-    chain_id: "KATANA",
-    rpc_url: "http://localhost:5050/",
-    torii_url: "http://localhost:8080/",
     token_address:
       "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
     vrf_provider_address:
@@ -39,8 +35,6 @@ const CONFIG = {
     sncast_profile: "dev-admin",
   },
   sepolia: {
-    chain_id: "",
-    rpc_url: "",
     token_address: "",
     vrf_provider_address: "",
     min_stake: "",
@@ -49,8 +43,6 @@ const CONFIG = {
     sncast_profile: "",
   },
   mainnet: {
-    chain_id: "",
-    rpc_url: "",
     token_address: "",
     vrf_provider_address: "",
     min_stake: "",
@@ -134,21 +126,4 @@ invoke("update_config on Actions", "update_config", actions, [
   cfg.vrf_provider_address,
 ]);
 
-// Write deployment summary
-
-const deployment = {
-  profile,
-  chain_id: cfg.chain_id,
-  rpc_url: cfg.rpc_url,
-  ...(cfg.torii_url && { torii_url: cfg.torii_url }),
-  world_address: manifest.world.address,
-  actions_address: actions,
-  pool_address: pool,
-  token_address: cfg.token_address,
-  vrf_provider_address: cfg.vrf_provider_address,
-};
-
-mkdirSync(resolve(root, "deployments"), { recursive: true });
-const outPath = resolve(root, `deployments/${profile}.json`);
-writeFileSync(outPath, JSON.stringify(deployment, null, 2));
-console.log(`\nwrote ${outPath}`);
+console.log("\ndone.");

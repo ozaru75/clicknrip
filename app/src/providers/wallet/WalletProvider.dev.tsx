@@ -7,9 +7,9 @@ import {
 import { StarkZap, StarkSigner, type WalletInterface } from "starkzap";
 
 const DEV_ACCOUNT_ADDRESS =
-  "0x127fd5f1fe78a71f8bcd1fec63e3fe2f0486b6ecd5c86a0466c3a21fa5cfcec";
+  "0x2af9427c5a277474c079a1283c880ee8a6f0f8fbf73ce969c08d88befec1bba";
 const DEV_PRIVATE_KEY =
-  "0xc5b2fcab997346f3ea1c00b002ecf6f382c5f9c9659a3894eb783c5320f912";
+  "0x1800000000300000180000000000030000000000003006001800006600";
 
 const sdk = new StarkZap({
   network: "devnet",

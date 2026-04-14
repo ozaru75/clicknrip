@@ -7,7 +7,7 @@ edition = "2024_07"
 sierra-replace-ids = true
 
 [scripts]
-migrate-dev = "sozo build && sozo migrate --profile dev"
+migrate-dev = "sozo build && sozo migrate --profile dev && node scripts/post_deployment.mjs dev"
 migrate-sepolia = "sozo build && sozo migrate --profile sepolia"
 migrate-mainnet = "sozo build && sozo migrate --profile mainnet"
 
