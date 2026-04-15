@@ -4,3 +4,4 @@ dojo_sepolia.toml
 .snfoundry_cache
 accounts
 manifest_dev.json
+torii
