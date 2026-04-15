@@ -160,8 +160,8 @@ pub mod actions {
             // Pull stake from player into the pool
             pool.deposit(player, stake);
 
-            // Generate unique game ID
-            let id = world.dispatcher.uuid();
+            // Generate unique game ID (increment by 1 to avoid ID=0 edge case)
+            let id = world.dispatcher.uuid() + 1;
 
             // Write game state
             world
