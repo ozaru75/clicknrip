@@ -1,8 +1,25 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, Show, createResource, createMemo, For } from "solid-js";
 import { Amount, fromAddress } from "starkzap";
 import { useWallet } from "@/providers/wallet";
 import { config } from "@/config";
 import { GAME_TOKEN, buildNewGameCall } from "@/lib/calls";
+import { fetchActiveGame } from "@/lib/torii";
+import { rowSizeForLevel, type ActiveGame } from "@/lib/game";
+
+function GameBoard(props: { game: ActiveGame }) {
+  const tileCount = () => rowSizeForLevel(props.game.level);
+
+  return (
+    <div>
+      <p>Level {props.game.level}</p>
+      <div>
+        <For each={Array.from({ length: tileCount() }, (_, i) => i + 1)}>
+          {(tile) => <button disabled>Box {tile}</button>}
+        </For>
+      </div>
+    </div>
+  );
+}
 
 export function Home() {
   const {
@@ -19,6 +36,21 @@ export function Home() {
   const [pending, setPending] = createSignal(false);
   const [txHash, setTxHash] = createSignal<string | null>(null);
   const [gameError, setGameError] = createSignal<string | null>(null);
+
+  // Load active game from Torii when address changes
+  const [gameResource, { refetch: refetchGame }] = createResource(
+    () => address() ?? undefined,
+    fetchActiveGame
+  );
+
+  // Loading state
+  const gameLoading = () => gameResource.state === "pending";
+
+  // Current game state (driven by Torii)
+  const game = createMemo<ActiveGame | null>(() => {
+    if (gameResource.state !== "ready") return null;
+    return gameResource() ?? null;
+  });
 
   async function newGame() {
     const w = wallet();
@@ -42,6 +74,10 @@ export function Home() {
 
       setTxHash(tx.hash);
       await tx.wait();
+
+      // Refetch game state from Torii after tx confirms
+      await refetchGame();
+      setStakeInput("");
     } catch (e) {
       setGameError(e instanceof Error ? e.message : "Transaction failed");
     } finally {
@@ -63,20 +99,34 @@ export function Home() {
           <p>{address()}</p>
           <button onClick={disconnect}>Disconnect</button>
 
-          <div>
-            <input
-              type="number"
-              placeholder="Stake (STRK)"
-              value={stakeInput()}
-              onInput={(e) => setStakeInput(e.currentTarget.value)}
-              disabled={pending()}
-              min="2"
-              step="0.1"
-            />
-            <button onClick={newGame} disabled={pending()}>
-              {pending() ? "Pending..." : "New Game"}
-            </button>
-          </div>
+          <Show
+            when={gameLoading()}
+            fallback={
+              <Show
+                when={game()}
+                fallback={
+                  <div>
+                    <input
+                      type="number"
+                      placeholder="Stake (STRK)"
+                      value={stakeInput()}
+                      onInput={(e) => setStakeInput(e.currentTarget.value)}
+                      disabled={pending()}
+                      min="2"
+                      step="0.1"
+                    />
+                    <button onClick={newGame} disabled={pending()}>
+                      {pending() ? "Pending..." : "New Game"}
+                    </button>
+                  </div>
+                }
+              >
+                {(g) => <GameBoard game={g()} />}
+              </Show>
+            }
+          >
+            <p>Loading game...</p>
+          </Show>
 
           <Show when={txHash()}>
             <p>tx: {txHash()}</p>

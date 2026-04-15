@@ -9,6 +9,7 @@ function required(key: string): string {
 export const config = {
   network: (import.meta.env.VITE_NETWORK ?? "devnet") as NetworkName,
   rpcUrl: import.meta.env.VITE_RPC_URL as string | undefined,
+  toriiUrl: import.meta.env.VITE_TORII_URL as string | undefined,
   actions: required("VITE_ACTIONS_ADDRESS"),
   pool: required("VITE_POOL_ADDRESS"),
   token: required("VITE_TOKEN_ADDRESS"),
