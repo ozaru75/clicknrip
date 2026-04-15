@@ -8,6 +8,11 @@ account = "admin"
 accounts-file = "./accounts/dev/accounts.json"
 url = "http://localhost:5050"
 
+[sncast.dev-operator]
+account = "operator"
+accounts-file = "./accounts/dev/accounts.json"
+url = "http://localhost:5050"
+
 [sncast.dev-player]
 account = "player"
 accounts-file = "./accounts/dev/accounts.json"

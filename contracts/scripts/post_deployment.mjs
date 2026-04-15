@@ -126,4 +126,4 @@ invoke("update_config on Actions", "update_config", actions, [
   cfg.vrf_provider_address,
 ]);
 
-console.log("\ndone.");
+console.log("\ndone");
