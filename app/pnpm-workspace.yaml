@@ -1,3 +1,0 @@
-allowBuilds:
-  '@reown/appkit': false
-  cbor-extract: false

@@ -13,5 +13,7 @@ export const config = {
   actions: required("VITE_ACTIONS_ADDRESS"),
   pool: required("VITE_POOL_ADDRESS"),
   token: required("VITE_TOKEN_ADDRESS"),
+  vrng: required("VITE_VRNG_ADDRESS"),
+  world: required("VITE_WORLD_ADDRESS"),
   minStake: 2n * 10n ** 18n,
 } as const;

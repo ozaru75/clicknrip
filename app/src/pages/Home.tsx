@@ -2,21 +2,63 @@ import { createSignal, Show, createResource, createMemo, For } from "solid-js";
 import { Amount, fromAddress } from "starkzap";
 import { useWallet } from "@/providers/wallet";
 import { config } from "@/config";
-import { GAME_TOKEN, buildNewGameCall } from "@/lib/calls";
+import {
+  GAME_TOKEN,
+  buildNewGameCall,
+  buildVrngRequestCall,
+  buildNewGuessCall,
+  buildCashoutCall,
+} from "@/lib/calls";
 import { fetchActiveGame } from "@/lib/torii";
-import { rowSizeForLevel, type ActiveGame } from "@/lib/game";
+import { rowSizeForLevel, GAME_CONFIG, type ActiveGame } from "@/lib/game";
+import {
+  parseGuessResult,
+  parseCashoutResult,
+  type GuessResult,
+  type CashoutResult,
+} from "@/lib/events";
 
-function GameBoard(props: { game: ActiveGame }) {
+function formatStrk(wei: bigint): string {
+  return (Number(wei) / 1e18).toFixed(4);
+}
+
+function GameBoard(props: {
+  game: ActiveGame;
+  onGuess: (tile: number) => void;
+  onCashout: () => void;
+  disabled: boolean;
+}) {
   const tileCount = () => rowSizeForLevel(props.game.level);
+  const multiplierBps = () =>
+    GAME_CONFIG.levelMultipliers[props.game.level - 1] ?? 100;
+  const multiplierDisplay = () => (multiplierBps() / 100).toFixed(2) + "x";
+  const payoutDisplay = () =>
+    formatStrk((props.game.stake * BigInt(multiplierBps())) / 100n) + " STRK";
 
   return (
     <div>
       <p>Level {props.game.level}</p>
+      <p>
+        Deposit: {formatStrk(props.game.stake)} STRK &middot; Multiplier:{" "}
+        {multiplierDisplay()} &middot; Payout: {payoutDisplay()}
+      </p>
       <div>
         <For each={Array.from({ length: tileCount() }, (_, i) => i + 1)}>
-          {(tile) => <button disabled>Box {tile}</button>}
+          {(tile) => (
+            <button
+              onClick={() => props.onGuess(tile)}
+              disabled={props.disabled}
+            >
+              Box {tile}
+            </button>
+          )}
         </For>
       </div>
+      <Show when={props.game.level > 1}>
+        <button onClick={props.onCashout} disabled={props.disabled}>
+          Cash out
+        </button>
+      </Show>
     </div>
   );
 }
@@ -34,29 +76,94 @@ export function Home() {
 
   const [stakeInput, setStakeInput] = createSignal("");
   const [pending, setPending] = createSignal(false);
+  const [actionPending, setActionPending] = createSignal(false);
+  const [guessResult, setGuessResult] = createSignal<GuessResult | null>(null);
+  const [cashoutResult, setCashoutResult] = createSignal<CashoutResult | null>(
+    null,
+  );
   const [txHash, setTxHash] = createSignal<string | null>(null);
   const [gameError, setGameError] = createSignal<string | null>(null);
 
   // Load active game from Torii when address changes
   const [gameResource, { refetch: refetchGame }] = createResource(
     () => address() ?? undefined,
-    fetchActiveGame
+    fetchActiveGame,
   );
 
-  // Loading state
-  const gameLoading = () => gameResource.state === "pending";
+  // Fetch STRK balance when wallet connects
+  const [balanceResource, { refetch: refetchBalance }] = createResource(
+    () => wallet() ?? undefined,
+    (w) => w.balanceOf(GAME_TOKEN),
+  );
 
-  // Current game state (driven by Torii)
-  const game = createMemo<ActiveGame | null>(() => {
-    if (gameResource.state !== "ready") return null;
-    return gameResource() ?? null;
-  });
+  // true for both initial fetch ("pending") and refetch ("refreshing")
+  const gameLoading = () => gameResource.loading;
+
+  // keeps last known value during refetch so the board doesn't blank mid-game
+  const game = createMemo<ActiveGame | null>(() => gameResource() ?? null);
+
+  async function newGuess(tile: number) {
+    const w = wallet();
+    const addr = address();
+    if (!w || !addr) return;
+
+    setActionPending(true);
+    setGuessResult(null);
+    setCashoutResult(null);
+    setGameError(null);
+    setTxHash(null);
+
+    try {
+      const tx = await w
+        .tx()
+        .add(buildVrngRequestCall(addr))
+        .add(buildNewGuessCall(tile))
+        .send();
+
+      setTxHash(tx.hash);
+      await tx.wait();
+
+      const [receipt] = await Promise.all([tx.receipt(), refetchGame()]);
+      setGuessResult(parseGuessResult(receipt, addr));
+    } catch (e) {
+      setGameError(e instanceof Error ? e.message : "Transaction failed");
+    } finally {
+      setActionPending(false);
+    }
+  }
+
+  async function cashout() {
+    const w = wallet();
+    const addr = address();
+    if (!w || !addr) return;
+
+    setActionPending(true);
+    setGuessResult(null);
+    setCashoutResult(null);
+    setGameError(null);
+    setTxHash(null);
+
+    try {
+      const tx = await w.tx().add(buildCashoutCall()).send();
+      setTxHash(tx.hash);
+      await tx.wait();
+
+      const [receipt] = await Promise.all([tx.receipt(), refetchGame()]);
+      setCashoutResult(parseCashoutResult(receipt, addr));
+    } catch (e) {
+      setGameError(e instanceof Error ? e.message : "Transaction failed");
+    } finally {
+      setActionPending(false);
+    }
+  }
 
   async function newGame() {
     const w = wallet();
     if (!w) return;
 
     setPending(true);
+    setGuessResult(null);
+    setCashoutResult(null);
     setGameError(null);
     setTxHash(null);
 
@@ -75,8 +182,8 @@ export function Home() {
       setTxHash(tx.hash);
       await tx.wait();
 
-      // Refetch game state from Torii after tx confirms
       await refetchGame();
+      void refetchBalance();
       setStakeInput("");
     } catch (e) {
       setGameError(e instanceof Error ? e.message : "Transaction failed");
@@ -106,6 +213,9 @@ export function Home() {
                 when={game()}
                 fallback={
                   <div>
+                    <Show when={balanceResource()}>
+                      {(b) => <p>Balance: {b().toFormatted()}</p>}
+                    </Show>
                     <input
                       type="number"
                       placeholder="Stake (STRK)"
@@ -121,11 +231,31 @@ export function Home() {
                   </div>
                 }
               >
-                {(g) => <GameBoard game={g()} />}
+                {(g) => (
+                  <GameBoard
+                    game={g()}
+                    onGuess={newGuess}
+                    onCashout={cashout}
+                    disabled={actionPending()}
+                  />
+                )}
               </Show>
             }
           >
             <p>Loading game...</p>
+          </Show>
+
+          <Show when={guessResult()}>
+            {(r) => (
+              <p>
+                {r().survived
+                  ? `Survived! Death tile was ${r().deathTile}.`
+                  : `Lost. Death tile was ${r().deathTile}.`}
+              </p>
+            )}
+          </Show>
+          <Show when={cashoutResult()}>
+            {(r) => <p>Cashed out {formatStrk(r().payout)} STRK.</p>}
           </Show>
 
           <Show when={txHash()}>

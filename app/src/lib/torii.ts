@@ -3,7 +3,7 @@ import type { ActiveGame, GameStatus } from "./game";
 
 async function toriiQuery<T>(
   query: string,
-  variables: Record<string, unknown>
+  variables: Record<string, unknown>,
 ): Promise<T> {
   if (!config.toriiUrl) {
     throw new Error("VITE_TORII_URL not configured");
@@ -49,12 +49,14 @@ const STATS_QUERY = `
 const GAME_QUERY = `
   query GetGame($gameId: Int!) {
     clicknripGameModels(where: { idEQ: $gameId }) {
-      edges { node { id status level } }
+      edges { node { id status level stake } }
     }
   }
 `;
 
-export async function fetchActiveGame(address: string): Promise<ActiveGame | null> {
+export async function fetchActiveGame(
+  address: string,
+): Promise<ActiveGame | null> {
   try {
     // Step 1: Get last_game_id
     const statsData = await toriiQuery<{
@@ -74,7 +76,14 @@ export async function fetchActiveGame(address: string): Promise<ActiveGame | nul
     // Step 2: Get game by id
     const gameData = await toriiQuery<{
       clicknripGameModels: {
-        edges: { node: { id: number; status: string; level: number } }[];
+        edges: {
+          node: {
+            id: number;
+            status: string;
+            level: number;
+            stake: string;
+          };
+        }[];
       };
     }>(GAME_QUERY, { gameId: lastGameId });
 
@@ -89,6 +98,7 @@ export async function fetchActiveGame(address: string): Promise<ActiveGame | nul
       id: gameNode.id,
       level: gameNode.level,
       status: gameNode.status as GameStatus,
+      stake: BigInt(gameNode.stake),
     };
 
     // Return only active games

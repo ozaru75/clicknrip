@@ -4,6 +4,7 @@ export interface ActiveGame {
   id: number;
   level: number;
   status: GameStatus;
+  stake: bigint;
 }
 
 export interface GameConfig {
