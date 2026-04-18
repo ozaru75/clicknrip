@@ -11,7 +11,7 @@ use starknet::ContractAddress;
 use crate::systems::actions::IActionsDispatcherTrait;
 
 // Tests
-use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, VRF_PROVIDER, fund_and_approve};
+use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, VRNG_PROVIDER, fund_and_approve};
 use crate::tests::utils::setup::setup;
 
 #[test]
@@ -69,7 +69,7 @@ fn test_pause_blocks_new_guess() {
     actions.pause();
     stop_cheat_caller_address(actions.contract_address);
 
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);
@@ -88,7 +88,7 @@ fn test_pause_blocks_cashout() {
     actions.new_game(MIN_STAKE);
     stop_cheat_caller_address(actions.contract_address);
 
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);

@@ -22,11 +22,11 @@ use crate::pool::IPoolDispatcherTrait;
 use crate::systems::actions::IActionsDispatcherTrait;
 
 // Tests
-use crate::tests::utils::helpers::{MIN_STAKE, VRF_PROVIDER, fund_and_approve};
+use crate::tests::utils::helpers::{MIN_STAKE, VRNG_PROVIDER, fund_and_approve};
 use crate::tests::utils::setup::setup;
 
-// Death tile formula: (vrf_value % row_size) + 1
-// VRF = 0 -> death_tile = 1 for any row_size, guessing 2 survives
+// Death tile formula: (vrng_value % row_size) + 1
+// vRNG = 0 -> death_tile = 1 for any row_size, guessing 2 survives
 
 #[test]
 fn test_cashout() {
@@ -43,13 +43,13 @@ fn test_cashout() {
     let player_balance_before = token.balance_of(player);
 
     // Survive level 1: death_tile = 1, player guesses 2
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);
 
     // Survive level 2: death_tile = 1, player guesses 2
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);

@@ -26,3 +26,8 @@ constructor_data = [
   "0x13d9ee239f33fea4f8785b9e3870ade909e20a9599ae7cd62c1c292b73af1b7",  # admin
   "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"  # strk token
 ]
+
+[[external_contracts]]
+contract_name = "mock_vrng"
+salt = "0"
+constructor_data = []

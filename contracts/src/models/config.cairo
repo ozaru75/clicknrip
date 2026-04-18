@@ -11,5 +11,5 @@ pub struct Config {
     pub team_fee_bps: u16,
     pub max_stake_bps: u16,
     pub pool: ContractAddress,
-    pub vrf_provider: ContractAddress,
+    pub vrng_provider: ContractAddress,
 }

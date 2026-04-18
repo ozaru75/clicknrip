@@ -24,7 +24,8 @@ use crate::systems::actions::IActionsDispatcher;
 
 // Tests
 use crate::tests::utils::helpers::{
-    ADMIN, MIN_STAKE, POOL_LIQUIDITY, TEAM_FEE_BPS, TOKEN_SUPPLY, VRF_PROVIDER, cheat_erc20_balance,
+    ADMIN, MIN_STAKE, POOL_LIQUIDITY, TEAM_FEE_BPS, TOKEN_SUPPLY, VRNG_PROVIDER,
+    cheat_erc20_balance,
 };
 
 // Deploy all contracts, seed initial state, and return the test harness.
@@ -65,7 +66,7 @@ pub fn setup() -> (WorldStorage, IActionsDispatcher, IPoolDispatcher, IERC20Disp
         team_fee_bps: TEAM_FEE_BPS,
         max_stake_bps: 1000, // 10% of liquidity
         pool: pool.contract_address,
-        vrf_provider: VRF_PROVIDER,
+        vrng_provider: VRNG_PROVIDER,
     };
     world.write_model_test(@config);
 

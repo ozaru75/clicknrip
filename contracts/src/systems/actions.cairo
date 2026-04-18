@@ -11,7 +11,7 @@ pub trait IActions<T> {
         team_fee_bps: u16,
         max_stake_bps: u16,
         pool: ContractAddress,
-        vrf_provider: ContractAddress,
+        vrng_provider: ContractAddress,
     );
     fn pause(ref self: T);
     fn unpause(ref self: T);
@@ -44,7 +44,7 @@ pub mod actions {
     use crate::models::player::PlayerStats;
     use crate::pool::{IPoolDispatcher, IPoolDispatcherTrait};
     use crate::roles::{ADMIN_ROLE, OPERATOR_ROLE};
-    use crate::vrf::{IVrfProviderDispatcher, IVrfProviderDispatcherTrait, Source};
+    use crate::vrng::{IVRNGDispatcher, IVRNGDispatcherTrait, Source};
 
     component!(path: AccessControlComponent, storage: accesscontrol, event: AccessControlEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
@@ -215,8 +215,8 @@ pub mod actions {
             };
 
             // Consume randomness and derive the death tile
-            let vrf = IVrfProviderDispatcher { contract_address: config.vrf_provider };
-            let random: u256 = vrf.consume_random(Source::Nonce(player)).into();
+            let vrng = IVRNGDispatcher { contract_address: config.vrng_provider };
+            let random: u256 = vrng.consume_random(Source::Nonce(player)).into();
 
             let death_tile: u8 = ((random.low % row_size.into()) + 1).try_into().unwrap();
 
@@ -286,19 +286,19 @@ pub mod actions {
             team_fee_bps: u16,
             max_stake_bps: u16,
             pool: ContractAddress,
-            vrf_provider: ContractAddress,
+            vrng_provider: ContractAddress,
         ) {
             self.accesscontrol.assert_only_role(ADMIN_ROLE);
 
             assert(max_stake_bps > 0, 'max stake bps is zero');
             assert(pool.is_non_zero(), 'pool address is zero');
-            assert(vrf_provider.is_non_zero(), 'vrf provider is zero');
+            assert(vrng_provider.is_non_zero(), 'vrng provider is zero');
 
             let mut world: WorldStorage = self.world(@"clicknrip");
             world
                 .write_model(
                     @Config {
-                        id: CONFIG_ID, min_stake, team_fee_bps, max_stake_bps, pool, vrf_provider,
+                        id: CONFIG_ID, min_stake, team_fee_bps, max_stake_bps, pool, vrng_provider,
                     },
                 );
         }

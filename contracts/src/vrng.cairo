@@ -7,7 +7,7 @@ pub enum Source {
 }
 
 #[starknet::interface]
-pub trait IVrfProvider<T> {
+pub trait IVRNG<T> {
     fn request_random(self: @T, caller: ContractAddress, source: Source);
     fn consume_random(ref self: T, source: Source) -> felt252;
 }

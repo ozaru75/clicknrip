@@ -27,8 +27,6 @@ const CONFIG = {
   dev: {
     token_address:
       "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-    vrf_provider_address:
-      "0x051fea4450da9d6aee758bdeba88b2f665bcbf549d2c61421aa724e9ac0ced8f",
     min_stake: "2000000000000000000", // 2 STRK
     team_fee_bps: "100", // 1%
     max_stake_bps: "1000", // 10% of pool
@@ -64,11 +62,13 @@ const findContract = (list, name) =>
 
 const actionsContract = findContract(manifest.contracts, "actions");
 const poolContract = findContract(manifest.external_contracts, "pool");
+const mockVrngContract = findContract(manifest.external_contracts, "mock_vrng");
 if (!actionsContract) throw new Error("actions not found in manifest");
 if (!poolContract) throw new Error("pool not found in manifest");
 
 const actions = actionsContract.address;
 const pool = poolContract.address;
+const vrngAddress = mockVrngContract?.address ?? cfg.vrf_provider_address;
 
 // On-chain setup
 
@@ -105,7 +105,8 @@ const invoke = (label, fn, contract, calldata) => {
   }
 };
 
-console.log(`\npool:    ${pool}`);
+console.log(`\nvrng: ${vrngAddress}`);
+console.log(`pool: ${pool}`);
 console.log(`actions: ${actions}\n`);
 
 // Step 1: grant Actions the OPERATOR_ROLE on Pool so it can call
@@ -115,7 +116,7 @@ invoke("grant OPERATOR_ROLE on Pool to Actions", "grant_role", pool, [
   actions,
 ]);
 
-// Step 2: set game parameters and wire pool/vrf addresses into Actions config
+// Step 2: set game parameters and wire pool/vrng addresses into Actions config
 // min_stake is u256 (low, high) -- high is always 0
 invoke("update_config on Actions", "update_config", actions, [
   cfg.min_stake,
@@ -123,7 +124,7 @@ invoke("update_config on Actions", "update_config", actions, [
   cfg.team_fee_bps,
   cfg.max_stake_bps,
   pool,
-  cfg.vrf_provider_address,
+  vrngAddress,
 ]);
 
 console.log("\ndone");

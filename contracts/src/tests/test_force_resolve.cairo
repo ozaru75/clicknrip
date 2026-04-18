@@ -11,7 +11,7 @@ use crate::systems::actions::IActionsDispatcherTrait;
 use crate::systems::actions::actions::FORCE_RESOLVE_DELAY;
 
 // Tests
-use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, VRF_PROVIDER, fund_and_approve};
+use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, VRNG_PROVIDER, fund_and_approve};
 use crate::tests::utils::setup::setup;
 
 fn start_game(
@@ -67,7 +67,7 @@ fn test_force_resolve_non_active_game() {
     let id = start_game(actions, pool, token, player);
 
     // Player cashes out normally first
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);

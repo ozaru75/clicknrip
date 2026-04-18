@@ -22,7 +22,7 @@ use crate::pool::IPoolDispatcherTrait;
 use crate::systems::actions::IActionsDispatcherTrait;
 
 // Tests
-use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, TEAM_FEE_BPS, VRF_PROVIDER, fund_and_approve};
+use crate::tests::utils::helpers::{ADMIN, MIN_STAKE, TEAM_FEE_BPS, VRNG_PROVIDER, fund_and_approve};
 use crate::tests::utils::setup::setup;
 
 #[test]
@@ -39,8 +39,8 @@ fn test_new_guess_survive() {
 
     let liquidity_before = pool.get_liquidity();
 
-    // Mock VRF: death_tile = 1, player guesses = 2 (survives)
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+    // Mock VRNG: death_tile = 1, player guesses = 2 (survives)
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
     let mut spy = spy_events();
     start_cheat_caller_address(actions.contract_address, player);
     let survived = actions.new_guess(2);
@@ -87,8 +87,8 @@ fn test_new_guess_lose() {
 
     let liquidity_before = pool.get_liquidity();
 
-    // Mock VRF: death_tile = 2, player guesses = 2 (loses)
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 1_felt252, 1);
+    // Mock VRNG: death_tile = 2, player guesses = 2 (loses)
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 1_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     let survived = actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);
@@ -133,7 +133,7 @@ fn test_new_guess_full_game() {
     // Play through all 25 levels: death_tile = 1, player guesses 2 -> survives each level
     let mut level: u8 = 1;
     while level <= 25 {
-        mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+        mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
         start_cheat_caller_address(actions.contract_address, player);
         actions.new_guess(2);
         stop_cheat_caller_address(actions.contract_address);
@@ -186,7 +186,7 @@ fn test_new_guess_after_loss() {
     stop_cheat_caller_address(actions.contract_address);
 
     // Lose the game
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 1_felt252, 1);
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 1_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);
@@ -246,7 +246,7 @@ fn test_new_guess_insufficient_liquidity() {
     pool.lock_reserve(remaining);
     stop_cheat_caller_address(pool.contract_address);
 
-    mock_call(VRF_PROVIDER, selector!("consume_random"), 0_felt252, 1);
+    mock_call(VRNG_PROVIDER, selector!("consume_random"), 0_felt252, 1);
     start_cheat_caller_address(actions.contract_address, player);
     actions.new_guess(2);
     stop_cheat_caller_address(actions.contract_address);
@@ -260,6 +260,6 @@ fn test_update_config_unauthorized() {
     let player: ContractAddress = 'player'.try_into().unwrap();
 
     start_cheat_caller_address(actions.contract_address, player);
-    actions.update_config(MIN_STAKE, 100, 500, ADMIN, VRF_PROVIDER);
+    actions.update_config(MIN_STAKE, 100, 500, ADMIN, VRNG_PROVIDER);
     stop_cheat_caller_address(actions.contract_address);
 }

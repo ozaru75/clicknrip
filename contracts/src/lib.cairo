@@ -1,5 +1,6 @@
+pub mod mock_vrng;
 pub mod roles;
-pub mod vrf;
+pub mod vrng;
 
 pub mod systems {
     pub mod actions;

@@ -19,7 +19,7 @@ pub const TEAM_FEE_BPS: u16 = 100;
 
 pub const ADMIN: ContractAddress = 'ADMIN'.try_into().unwrap();
 
-pub const VRF_PROVIDER: ContractAddress = 'VRF_PROVIDER'.try_into().unwrap();
+pub const VRNG_PROVIDER: ContractAddress = 'VRNG_PROVIDER'.try_into().unwrap();
 
 // Initial token supply minted to ADMIN
 pub const TOKEN_SUPPLY: u256 = 100 * TOKEN_UNIT;
