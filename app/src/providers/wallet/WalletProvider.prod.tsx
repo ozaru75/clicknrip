@@ -36,12 +36,12 @@ export function WalletProvider(props: ParentProps) {
   const [connecting, setConnecting] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [storedAddr, setStoredAddr] = createSignal<string | null>(
-    localStorage.getItem(STORAGE_KEY),
+    localStorage.getItem(STORAGE_KEY)
   );
 
   // Show cached address instantly on load, switch to live wallet once probe settles
   const address = createMemo(
-    () => wallet()?.address.toString() ?? storedAddr(),
+    () => wallet()?.address.toString() ?? storedAddr()
   );
 
   function persistAddress(addr: string | null) {
@@ -80,7 +80,7 @@ export function WalletProvider(props: ParentProps) {
         sdk.connectCartridge({ policies: GAME_POLICIES }),
         new Promise<null>((resolve) => {
           const container = document.querySelector(
-            'iframe[id^="controller-"]',
+            'iframe[id^="controller-"]'
           )?.parentElement;
           if (!container) return;
           observer = new MutationObserver(() => {
@@ -110,7 +110,8 @@ export function WalletProvider(props: ParentProps) {
   async function disconnect() {
     try {
       await wallet()?.disconnect();
-    } catch {
+    } catch (_) {
+      // disconnect errors are non-fatal
     } finally {
       setWallet(null);
       persistAddress(null);

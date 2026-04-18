@@ -1,0 +1,19 @@
+{
+  "scripts": {
+    "prepare": "husky",
+    "lint:staged": "pnpm exec lint-staged"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0"
+  },
+  "lint-staged": {
+    "app/**/*.{js,ts,jsx,tsx}": [
+      "pnpm --prefix ./app exec eslint --fix",
+      "pnpm --prefix ./app exec prettier --write"
+    ],
+    "app/**/*.{json,md,css,scss}": [
+      "pnpm --prefix ./app exec prettier --write"
+    ]
+  }
+}
