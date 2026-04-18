@@ -1,4 +1,10 @@
-import { createSignal, Show, createResource, createMemo, For } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  Show,
+  createResource,
+  For,
+} from "solid-js";
 import { Amount, fromAddress } from "starkzap";
 import { useWallet } from "@/providers/wallet";
 import { config } from "@/config";
@@ -9,11 +15,20 @@ import {
   buildNewGuessCall,
   buildCashoutCall,
 } from "@/lib/calls";
-import { fetchActiveGame } from "@/lib/torii";
+import {
+  fetchActiveGame,
+  fetchLatestGuessResolved,
+  subscribeToWorldEvent,
+  type WorldEvent,
+} from "@/lib/torii";
 import { rowSizeForLevel, GAME_CONFIG, type ActiveGame } from "@/lib/game";
 import {
-  parseGuessResult,
-  parseCashoutResult,
+  isGameCreatedEvent,
+  isGuessResolvedEvent,
+  isGameEndedEvent,
+  parseGameCreatedFromEvent,
+  parseGuessResultFromEvent,
+  parseCashoutResultFromEvent,
   type GuessResult,
   type CashoutResult,
 } from "@/lib/events";
@@ -84,8 +99,9 @@ export function Home() {
   const [txHash, setTxHash] = createSignal<string | null>(null);
   const [gameError, setGameError] = createSignal<string | null>(null);
 
-  // Load active game from Torii when address changes
-  const [gameResource, { refetch: refetchGame }] = createResource(
+  // Torii is source of truth for initial load only
+  // In-session state is managed via game signal below
+  const [gameResource] = createResource(
     () => address() ?? undefined,
     fetchActiveGame,
   );
@@ -96,11 +112,85 @@ export function Home() {
     (w) => w.balanceOf(GAME_TOKEN),
   );
 
-  // true for both initial fetch ("pending") and refetch ("refreshing")
-  const gameLoading = () => gameResource.loading;
+  // Writable game state: seeded from Torii on load, updated from WS events
+  // after each action; avoids Torii HTTP round-trips in the hot path
+  const [game, setGame] = createSignal<ActiveGame | null>(null);
 
-  // keeps last known value during refetch so the board doesn't blank mid-game
-  const game = createMemo<ActiveGame | null>(() => gameResource() ?? null);
+  createEffect(() => {
+    if (!address()) {
+      setGame(null);
+      return;
+    }
+    if (gameResource.state === "ready") {
+      setGame(gameResource() ?? null);
+    }
+  });
+
+  // Show loading spinner only during initial Torii fetch
+  const gameLoading = () => gameResource.state === "pending";
+
+  function clearActionState() {
+    setGuessResult(null);
+    setCashoutResult(null);
+    setGameError(null);
+    setTxHash(null);
+  }
+
+  async function newGame() {
+    const w = wallet();
+    const addr = address();
+    if (!w || !addr) return;
+
+    setPending(true);
+    clearActionState();
+
+    // Subscribe before sending so we catch the GameCreated event from the
+    // pending block, not waiting for finalization
+    let sub: { event: Promise<WorldEvent>; cancel: () => void };
+    try {
+      sub = await subscribeToWorldEvent((e) => isGameCreatedEvent(e, addr));
+    } catch (e) {
+      setGameError(
+        e instanceof Error ? e.message : "Failed to connect to Torii",
+      );
+      setPending(false);
+      return;
+    }
+
+    try {
+      const amount = Amount.parse(stakeInput(), GAME_TOKEN);
+      if (amount.toBase() < config.minStake) {
+        throw new Error("Minimum stake is 2 STRK");
+      }
+
+      const tx = await w
+        .tx()
+        .approve(GAME_TOKEN, fromAddress(config.pool), amount)
+        .add(buildNewGameCall(amount.toBase()))
+        .send()
+        .catch((e: unknown) => {
+          sub.cancel();
+          throw e;
+        });
+
+      setTxHash(tx.hash);
+
+      const event = await sub.event;
+      const { id, stake } = parseGameCreatedFromEvent(event);
+      setGame({ id, level: 1, status: "Active", stake });
+      setStakeInput("");
+
+      // Update balance after finalization (stake left the wallet)
+      void tx
+        .wait()
+        .then(() => refetchBalance())
+        .catch(() => {});
+    } catch (e) {
+      setGameError(e instanceof Error ? e.message : "Transaction failed");
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function newGuess(tile: number) {
     const w = wallet();
@@ -108,24 +198,54 @@ export function Home() {
     if (!w || !addr) return;
 
     setActionPending(true);
-    setGuessResult(null);
-    setCashoutResult(null);
-    setGameError(null);
-    setTxHash(null);
+    clearActionState();
+
+    let sub: { event: Promise<WorldEvent>; cancel: () => void };
+    try {
+      sub = await subscribeToWorldEvent((e) => isGuessResolvedEvent(e, addr));
+    } catch (e) {
+      setGameError(
+        e instanceof Error ? e.message : "Failed to connect to Torii",
+      );
+      setActionPending(false);
+      return;
+    }
 
     try {
       const tx = await w
         .tx()
         .add(buildVrngRequestCall(addr))
         .add(buildNewGuessCall(tile))
-        .send();
+        .send()
+        .catch((e: unknown) => {
+          sub.cancel();
+          throw e;
+        });
 
       setTxHash(tx.hash);
-      await tx.wait();
 
-      const [receipt] = await Promise.all([tx.receipt(), refetchGame()]);
-      setGuessResult(parseGuessResult(receipt, addr));
+      const event = await sub.event;
+      const result = parseGuessResultFromEvent(event);
+      const currentGame = game();
+      setGuessResult(result);
+
+      if (result.survived) {
+        setGame((g) => (g ? { ...g, level: result.level } : null));
+      } else {
+        setGame(null);
+      }
+
+      // Fetch death_tile from GuessResolved event (not in entity model)
+      if (currentGame) {
+        void fetchLatestGuessResolved(addr, currentGame.id).then((data) => {
+          if (data)
+            setGuessResult((r) =>
+              r ? { ...r, deathTile: data.deathTile } : null,
+            );
+        });
+      }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setGameError(e instanceof Error ? e.message : "Transaction failed");
     } finally {
       setActionPending(false);
@@ -138,57 +258,46 @@ export function Home() {
     if (!w || !addr) return;
 
     setActionPending(true);
-    setGuessResult(null);
-    setCashoutResult(null);
-    setGameError(null);
-    setTxHash(null);
+    clearActionState();
+
+    let sub: { event: Promise<WorldEvent>; cancel: () => void };
+    try {
+      sub = await subscribeToWorldEvent((e) => isGameEndedEvent(e, addr));
+    } catch (e) {
+      setGameError(
+        e instanceof Error ? e.message : "Failed to connect to Torii",
+      );
+      setActionPending(false);
+      return;
+    }
 
     try {
-      const tx = await w.tx().add(buildCashoutCall()).send();
-      setTxHash(tx.hash);
-      await tx.wait();
+      const tx = await w
+        .tx()
+        .add(buildCashoutCall())
+        .send()
+        .catch((e: unknown) => {
+          sub.cancel();
+          throw e;
+        });
 
-      const [receipt] = await Promise.all([tx.receipt(), refetchGame()]);
-      setCashoutResult(parseCashoutResult(receipt, addr));
+      setTxHash(tx.hash);
+
+      const event = await sub.event;
+      const result = parseCashoutResultFromEvent(event);
+      setCashoutResult(result);
+      setGame(null);
+
+      // Update balance after finalization (payout arrived)
+      void tx
+        .wait()
+        .then(() => refetchBalance())
+        .catch(() => {});
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setGameError(e instanceof Error ? e.message : "Transaction failed");
     } finally {
       setActionPending(false);
-    }
-  }
-
-  async function newGame() {
-    const w = wallet();
-    if (!w) return;
-
-    setPending(true);
-    setGuessResult(null);
-    setCashoutResult(null);
-    setGameError(null);
-    setTxHash(null);
-
-    try {
-      const amount = Amount.parse(stakeInput(), GAME_TOKEN);
-      if (amount.toBase() < config.minStake) {
-        throw new Error("Minimum stake is 2 STRK");
-      }
-
-      const tx = await w
-        .tx()
-        .approve(GAME_TOKEN, fromAddress(config.pool), amount)
-        .add(buildNewGameCall(amount.toBase()))
-        .send();
-
-      setTxHash(tx.hash);
-      await tx.wait();
-
-      await refetchGame();
-      void refetchBalance();
-      setStakeInput("");
-    } catch (e) {
-      setGameError(e instanceof Error ? e.message : "Transaction failed");
-    } finally {
-      setPending(false);
     }
   }
 
